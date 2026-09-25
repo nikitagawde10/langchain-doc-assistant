@@ -11,6 +11,8 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+from sentence_transformers import CrossEncoder
+
 
 load_dotenv()
 
@@ -48,17 +50,13 @@ print(f"Created {len(chunks)} chunks")
 
 def tokenize(text):
     """
-    Normalizes text before BM25 indexes/searches it.
+    Normalizes text for BM25.
 
     Example:
 
     "Who is Hoseok?"
-          ↓
+            ↓
     ["who", "is", "hoseok"]
-
-    This avoids problems such as:
-
-    "Hoseok?" != "Hoseok"
     """
 
     return re.findall(
@@ -76,16 +74,22 @@ bm25_retriever = BM25Retriever.from_documents(
     preprocess_func=tokenize
 )
 
-bm25_retriever.k = 5
+# Retrieve broadly.
+# The reranker will later choose the best results.
+bm25_retriever.k = 10
 
 
 # =========================================================
 # 5. CREATE EMBEDDING MODEL
 # =========================================================
 
+print("Loading embedding model...")
+
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
+
+print("Embedding model loaded!")
 
 
 # =========================================================
@@ -104,7 +108,39 @@ print("Embeddings created!")
 
 
 # =========================================================
-# 7. FORMAT DOCUMENTS FOR THE LLM
+# 7. CREATE CROSS-ENCODER RERANKER
+# =========================================================
+#
+# Embedding model:
+#
+# question ----> vector
+#                   \
+#                    similarity
+#                   /
+# document ----> vector
+#
+#
+# Cross encoder:
+#
+# [question + document]
+#          ↓
+#       model
+#          ↓
+# relevance score
+#
+# =========================================================
+
+print("Loading reranker...")
+
+reranker = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L6-v2"
+)
+
+print("Reranker loaded!")
+
+
+# =========================================================
+# 8. FORMAT DOCUMENTS FOR THE LLM
 # =========================================================
 
 def format_documents(documents):
@@ -127,7 +163,7 @@ def format_documents(documents):
 
 
 # =========================================================
-# 8. RECIPROCAL RANK FUSION
+# 9. RECIPROCAL RANK FUSION
 # =========================================================
 
 def reciprocal_rank_fusion(
@@ -135,45 +171,35 @@ def reciprocal_rank_fusion(
     k=60
 ):
     """
-    Combines rankings from multiple retrievers.
+    Combine rankings from multiple retrievers.
 
-    Documents that appear near the top of multiple
-    result lists receive a higher final score.
+    RRF formula:
 
-    RRF score:
+        score += 1 / (k + rank)
 
-        1 / (k + rank)
-
-    The scores from each retriever are added together.
+    If the same chunk is highly ranked by both BM25
+    and vector search, it receives contributions from
+    both systems.
     """
 
     scores = {}
 
     documents_by_id = {}
 
-    # Go through each retriever's result list
+
+    # Go through each retrieval system
     for results in result_lists:
 
-        # rank starts at 1:
-        #
-        # result #1 → rank 1
-        # result #2 → rank 2
-        # etc.
+        # Go through that retriever's ranking
         for rank, document in enumerate(
             results,
             start=1
         ):
 
-            # ---------------------------------------------
-            # Create an identity for this chunk
-            # ---------------------------------------------
+            # Create a unique identity for this chunk.
             #
-            # BM25 and vector search might return the
-            # exact same chunk.
-            #
-            # We need to recognize that they are the
-            # same result so their RRF scores are combined.
-            # ---------------------------------------------
+            # This lets us recognize when BM25 and
+            # vector search returned the SAME chunk.
 
             document_id = (
                 document.metadata.get("source"),
@@ -181,22 +207,26 @@ def reciprocal_rank_fusion(
                 document.page_content
             )
 
-            # Store the actual Document object
+
+            # Store actual Document object
             documents_by_id[document_id] = document
 
-            # Initialize score
+
+            # Initialize score if this is the first
+            # time we've encountered this chunk.
+
             if document_id not in scores:
                 scores[document_id] = 0
 
-            # Add this retriever's contribution
+
+            # Add RRF contribution
+
             scores[document_id] += (
                 1 / (k + rank)
             )
 
 
-    # =====================================================
-    # Sort chunk IDs by RRF score
-    # =====================================================
+    # Sort IDs from highest RRF score to lowest
 
     ranked_ids = sorted(
         scores,
@@ -205,9 +235,7 @@ def reciprocal_rank_fusion(
     )
 
 
-    # =====================================================
-    # Convert IDs back into Document objects
-    # =====================================================
+    # Convert IDs back into Documents
 
     ranked_documents = [
         documents_by_id[document_id]
@@ -219,7 +247,92 @@ def reciprocal_rank_fusion(
 
 
 # =========================================================
-# 9. CREATE PROMPT
+# 10. CROSS-ENCODER RERANKING
+# =========================================================
+
+def rerank_documents(
+    question,
+    documents,
+    top_k=5
+):
+    """
+    Rerank candidate Documents using a CrossEncoder.
+
+    Each candidate is paired with the question:
+
+        [
+            [question, document1],
+            [question, document2],
+            ...
+        ]
+
+    The CrossEncoder reads BOTH pieces of text together
+    and predicts how relevant the document is to the
+    question.
+    """
+
+    if not documents:
+        return []
+
+
+    # Create question/document pairs
+
+    pairs = []
+
+    for document in documents:
+
+        pairs.append([
+            question,
+            document.page_content
+        ])
+
+
+    # Ask cross-encoder for relevance scores
+
+    scores = reranker.predict(
+        pairs
+    )
+
+
+    # Combine each Document with its score:
+    #
+    # [
+    #     (Document, 7.4),
+    #     (Document, -2.1),
+    #     ...
+    # ]
+
+    scored_documents = list(
+        zip(
+            documents,
+            scores
+        )
+    )
+
+
+    # Sort according to score.
+    #
+    # item looks like:
+    #
+    # (Document, score)
+    #
+    # item[1] therefore means:
+    #
+    # score
+
+    scored_documents.sort(
+        key=lambda item: item[1],
+        reverse=True
+    )
+
+
+    # Keep only the best results
+
+    return scored_documents[:top_k]
+
+
+# =========================================================
+# 11. CREATE PROMPT
 # =========================================================
 
 prompt = ChatPromptTemplate.from_messages([
@@ -227,21 +340,24 @@ prompt = ChatPromptTemplate.from_messages([
         "system",
         """
 You are a document question-answering assistant.
-Answer using only the provided context.
 
-You may make an inference only when multiple details in the
-context strongly support it. Clearly label such statements
-as inferences.
+Answer the user's question using only the provided context.
+
+You may make an inference only when the context strongly
+supports it. Clearly indicate when something is an inference
+rather than an explicitly stated fact.
 
 Do not infer occupations, relationships, locations, ages,
 or other factual attributes unless the context supports them.
 
-If the answer cannot be determined, say:
+If the answer cannot be determined from the context, say:
+
 "I don't know based on the provided document."
 
-Cite the page label for factual claims when possible.
+Do not invent information.
 
-
+When possible, mention the page number associated with
+the information.
 
 Context:
 {context}
@@ -256,7 +372,7 @@ Context:
 
 
 # =========================================================
-# 10. CREATE LLM
+# 12. CREATE LLM
 # =========================================================
 
 model = ChatGroq(
@@ -265,7 +381,7 @@ model = ChatGroq(
 
 
 # =========================================================
-# 11. CREATE ANSWER CHAIN
+# 13. CREATE ANSWER CHAIN
 # =========================================================
 
 answer_chain = (
@@ -276,7 +392,7 @@ answer_chain = (
 
 
 # =========================================================
-# 12. QUESTION LOOP
+# 14. QUESTION LOOP
 # =========================================================
 
 while True:
@@ -298,7 +414,7 @@ while True:
 
 
     # =====================================================
-    # 13. BM25 SEARCH
+    # 15. BM25 RETRIEVAL
     # =====================================================
 
     bm25_results = bm25_retriever.invoke(
@@ -336,13 +452,13 @@ while True:
 
 
     # =====================================================
-    # 14. VECTOR SEARCH
+    # 16. VECTOR RETRIEVAL
     # =====================================================
 
     vector_results_with_scores = (
         vector_store.similarity_search_with_score(
             question,
-            k=5
+            k=10
         )
     )
 
@@ -384,18 +500,24 @@ while True:
 
 
     # =====================================================
-    # 15. EXTRACT DOCUMENTS FROM VECTOR RESULTS
+    # 17. REMOVE VECTOR SCORES FOR RRF
     # =====================================================
     #
-    # similarity_search_with_score() returned:
+    # We currently have:
     #
     # [
-    #     (Document, score),
-    #     (Document, score),
+    #     (Document, similarity_score),
     #     ...
     # ]
     #
-    # RRF only needs the Documents.
+    # RRF uses ranking position, so we only need:
+    #
+    # [
+    #     Document,
+    #     Document,
+    #     ...
+    # ]
+    #
     # =====================================================
 
     vector_results = [
@@ -406,7 +528,7 @@ while True:
 
 
     # =====================================================
-    # 16. HYBRID RETRIEVAL USING RRF
+    # 18. HYBRID RETRIEVAL USING RRF
     # =====================================================
 
     hybrid_results = reciprocal_rank_fusion(
@@ -418,23 +540,29 @@ while True:
 
 
     # =====================================================
-    # 17. KEEP TOP 5 HYBRID RESULTS
+    # 19. KEEP TOP 10 RRF CANDIDATES
+    # =====================================================
+    #
+    # IMPORTANT:
+    #
+    # We are NOT choosing the final context here.
+    #
+    # RRF gives us candidates.
+    #
+    # The reranker makes the final relevance decision.
+    #
     # =====================================================
 
-    retrieved_documents = hybrid_results[:5]
+    rrf_candidates = hybrid_results[:10]
 
-
-    # =====================================================
-    # 18. DISPLAY HYBRID RESULTS
-    # =====================================================
 
     print("\n================================")
-    print("HYBRID RESULTS")
+    print("RRF CANDIDATES")
     print("================================")
 
 
     for index, document in enumerate(
-        retrieved_documents
+        rrf_candidates
     ):
 
         page = document.metadata.get(
@@ -458,7 +586,81 @@ while True:
 
 
     # =====================================================
-    # 19. FORMAT HYBRID RESULTS INTO CONTEXT
+    # 20. CROSS-ENCODER RERANKING
+    # =====================================================
+
+    reranked_results = rerank_documents(
+        question=question,
+        documents=rrf_candidates,
+        top_k=5
+    )
+
+
+    # =====================================================
+    # 21. DISPLAY RERANKED RESULTS
+    # =====================================================
+
+    print("\n================================")
+    print("RERANKED RESULTS")
+    print("================================")
+
+
+    for index, (
+        document,
+        score
+    ) in enumerate(
+        reranked_results
+    ):
+
+        page = document.metadata.get(
+            "page_label",
+            "Unknown"
+        )
+
+        print(f"\nRESULT {index + 1}")
+
+        print(
+            f"Page: {page}"
+        )
+
+        print(
+            f"Reranker score: {float(score):.4f}"
+        )
+
+        print(
+            document.page_content[:500]
+        )
+
+        print(
+            "--------------------------------"
+        )
+
+
+    # =====================================================
+    # 22. EXTRACT FINAL DOCUMENTS
+    # =====================================================
+    #
+    # reranked_results looks like:
+    #
+    # [
+    #     (Document, score),
+    #     (Document, score),
+    #     ...
+    # ]
+    #
+    # Groq only needs the Documents.
+    #
+    # =====================================================
+
+    retrieved_documents = [
+        document
+        for document, score
+        in reranked_results
+    ]
+
+
+    # =====================================================
+    # 23. FORMAT FINAL CONTEXT
     # =====================================================
 
     context = format_documents(
@@ -467,7 +669,7 @@ while True:
 
 
     # =====================================================
-    # 20. SEND CONTEXT + QUESTION TO LLM
+    # 24. SEND QUESTION + CONTEXT TO GROQ
     # =====================================================
 
     answer = answer_chain.invoke({
@@ -477,7 +679,7 @@ while True:
 
 
     # =====================================================
-    # 21. DISPLAY ANSWER
+    # 25. DISPLAY ANSWER
     # =====================================================
 
     print("\n================================")
@@ -488,7 +690,7 @@ while True:
 
 
     # =====================================================
-    # 22. DISPLAY RETRIEVED PAGES
+    # 26. DISPLAY FINAL SOURCE PAGES
     # =====================================================
 
     pages = []
@@ -505,6 +707,6 @@ while True:
 
 
     print(
-        "\nHybrid-retrieved pages:",
+        "\nFinal reranked pages:",
         ", ".join(pages)
     )
