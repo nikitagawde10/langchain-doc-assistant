@@ -1,13 +1,13 @@
 from dotenv import load_dotenv
 
-from langchain_groq import ChatGroq
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 
-from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-
 from langchain_core.runnables import (
     RunnableLambda,
     RunnablePassthrough
@@ -17,78 +17,66 @@ from langchain_core.runnables import (
 load_dotenv()
 
 
-# ---------------------------------------------------------
-# Documents
-# ---------------------------------------------------------
+# =========================================================
+# 1. LOAD DOCUMENT
+# =========================================================
 
-documents = [
-    Document(
-        page_content="Jungkook sings Seven and Standing Next to You.",
-        metadata={
-            "source": "jungkook.txt",
-            "artist": "Jungkook"
-        }
-    ),
+loader = TextLoader(
+    "documents/notes.txt",
+    encoding="utf-8"
+)
 
-    Document(
-        page_content="Jimin sings Like Crazy and Promise.",
-        metadata={
-            "source": "jimin.txt",
-            "artist": "Jimin"
-        }
-    ),
+documents = loader.load()
 
-    Document(
-        page_content="Taehyung sings Love Me Again and Winter Bear.",
-        metadata={
-            "source": "taetae.txt",
-            "artist": "Taehyung"
-        }
-    )
-]
+print(f"Loaded {len(documents)} document(s)")
 
 
-# ---------------------------------------------------------
-# Embeddings
-# ---------------------------------------------------------
+# =========================================================
+# 2. SPLIT DOCUMENT INTO CHUNKS
+# =========================================================
+
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=300,
+    chunk_overlap=50
+)
+
+chunks = text_splitter.split_documents(documents)
+
+print(f"Created {len(chunks)} chunks")
+
+
+# =========================================================
+# 3. CREATE EMBEDDING MODEL
+# =========================================================
 
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
 
-# ---------------------------------------------------------
-# Vector Store
-# ---------------------------------------------------------
+# =========================================================
+# 4. CREATE VECTOR STORE
+# =========================================================
 
 vector_store = InMemoryVectorStore(
     embedding=embeddings
 )
 
-vector_store.add_documents(documents)
+vector_store.add_documents(chunks)
 
 
-# ---------------------------------------------------------
-# Retriever
-# ---------------------------------------------------------
+# =========================================================
+# 5. CREATE RETRIEVER
+# =========================================================
 
 retriever = vector_store.as_retriever(
-    search_kwargs={"k": 2}
+    search_kwargs={"k": 3}
 )
 
 
-# ---------------------------------------------------------
-# LLM
-# ---------------------------------------------------------
-
-model = ChatGroq(
-    model="openai/gpt-oss-20b"
-)
-
-
-# ---------------------------------------------------------
-# Format retrieved documents
-# ---------------------------------------------------------
+# =========================================================
+# 6. FORMAT RETRIEVED DOCUMENTS
+# =========================================================
 
 def format_documents(documents):
     formatted = []
@@ -99,20 +87,20 @@ def format_documents(documents):
     return "\n\n".join(formatted)
 
 
-# ---------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------
+# =========================================================
+# 7. CREATE PROMPT
+# =========================================================
 
 prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         """
-You are a helpful assistant.
+You are a helpful document assistant.
 
-Answer the question using only the provided context.
+Answer the user's question using only the provided context.
 
 If the answer cannot be determined from the context,
-say "I don't know based on the provided documents."
+say "I don't know based on the provided document."
 
 Context:
 {context}
@@ -125,9 +113,18 @@ Context:
 ])
 
 
-# ---------------------------------------------------------
-# Complete RAG Chain
-# ---------------------------------------------------------
+# =========================================================
+# 8. CREATE LLM
+# =========================================================
+
+model = ChatGroq(
+    model="openai/gpt-oss-20b"
+)
+
+
+# =========================================================
+# 9. CREATE RAG CHAIN
+# =========================================================
 
 rag_chain = (
     {
@@ -144,13 +141,27 @@ rag_chain = (
 )
 
 
-# ---------------------------------------------------------
-# Ask question
-# ---------------------------------------------------------
+# =========================================================
+# 10. QUESTION LOOP
+# =========================================================
 
-question = input("Ask a question: ")
+while True:
 
-answer = rag_chain.invoke(question)
+    question = input("\nAsk a question (or type 'exit'): ")
 
-print("\nAnswer:")
-print(answer)
+    if question.lower() == "exit":
+        print("Goodbye!")
+        break
+
+    retrieved_docs = retriever.invoke(question)
+
+    print("\n--- RETRIEVED CHUNKS ---")
+
+    for doc in retrieved_docs:
+        print(doc.page_content)
+        print("-----")
+
+    answer = rag_chain.invoke(question)
+
+    print("\nAnswer:")
+    print(answer)
