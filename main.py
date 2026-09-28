@@ -184,9 +184,9 @@ while True:
             "================================"
         )
 
-        # -------------------------------------------------
+        # =================================================
         # EXACT COUNT
-        # -------------------------------------------------
+        # =================================================
 
         if (
             result["type"]
@@ -212,10 +212,6 @@ while True:
                 result["count"]
             )
 
-            # ---------------------------------------------
-            # Show where occurrences happened
-            # ---------------------------------------------
-
             pages = []
 
             for match in result[
@@ -235,13 +231,13 @@ while True:
                 ", ".join(pages)
             )
 
-        # -------------------------------------------------
-        # SEMANTIC AGGREGATION
-        # -------------------------------------------------
+        # =================================================
+        # SEMANTIC AGGREGATION WITH LITERAL CANDIDATES
+        # =================================================
 
         elif (
             result["type"]
-            == "semantic"
+            == "semantic_literal"
         ):
 
             print(
@@ -250,12 +246,90 @@ while True:
             )
 
             print(
+                "Candidate search text:",
+                repr(
+                    result[
+                        "search_text"
+                    ]
+                )
+            )
+
+            print(
+                "Candidates examined:",
+                result[
+                    "candidate_count"
+                ]
+            )
+
+            print(
+                "Verified matches:",
+                result["count"]
+            )
+
+            # ---------------------------------------------
+            # SHOW VERIFIED RESULTS
+            # ---------------------------------------------
+
+            if not result["matches"]:
+
+                print(
+                    "\nNo verified matches found."
+                )
+
+            else:
+
+                for index, match in enumerate(
+                    result["matches"],
+                    start=1
+                ):
+
+                    print(
+                        f"\nVERIFIED MATCH {index}"
+                    )
+
+                    print(
+                        "Page:",
+                        match["page"]
+                    )
+
+                    print(
+                        "Evidence:",
+                        match["evidence"]
+                    )
+
+                    print(
+                        "\nPassage:"
+                    )
+
+                    print(
+                        match["snippet"]
+                    )
+
+                    print(
+                        "--------------------------------"
+                    )
+
+        # =================================================
+        # BROAD SEMANTIC AGGREGATION
+        # =================================================
+
+        elif (
+            result["type"]
+            == "semantic_broad"
+        ):
+
+            print(
+                "\nAggregation type: "
+                "BROAD SEMANTIC"
+            )
+
+            print(
                 result["message"]
             )
 
-        # -------------------------------------------------
+        # =================================================
         # ERROR
-        # -------------------------------------------------
+        # =================================================
 
         else:
 

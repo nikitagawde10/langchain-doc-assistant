@@ -33,9 +33,7 @@ model = ChatGroq(
 # 3. QUERY ROUTER SCHEMA
 # =========================================================
 
-class QueryClassification(
-    BaseModel
-):
+class QueryClassification(BaseModel):
 
     query_type: Literal[
         "semantic",
@@ -53,10 +51,8 @@ class QueryClassification(
 # 4. ROUTER MODEL
 # =========================================================
 
-router_model = (
-    model.with_structured_output(
-        QueryClassification
-    )
+router_model = model.with_structured_output(
+    QueryClassification
 )
 
 
@@ -141,7 +137,6 @@ Otherwise, if exact matching is unnecessary:
 Return only the structured classification.
 """
     ),
-
     (
         "human",
         "{question}"
@@ -159,9 +154,7 @@ router_chain = (
 # 6. CLASSIFY QUERY
 # =========================================================
 
-def classify_query(
-    question
-):
+def classify_query(question):
 
     result = router_chain.invoke({
         "question": question
@@ -171,7 +164,6 @@ def classify_query(
         result,
         QueryClassification
     ):
-
         return result
 
     return QueryClassification.model_validate(
@@ -237,7 +229,6 @@ Context:
 {context}
 """
     ),
-
     (
         "human",
         "{question}"
@@ -256,15 +247,11 @@ answer_chain = (
 # 9. SEMANTIC SEARCH
 # =========================================================
 
-def semantic_search(
-    question
-):
+def semantic_search(question):
 
-    reranked_results = (
-        hybrid_retrieve(
-            question,
-            top_k=5
-        )
+    reranked_results = hybrid_retrieve(
+        question,
+        top_k=5
     )
 
     retrieved_documents = [
@@ -276,11 +263,9 @@ def semantic_search(
     print(
         "\n================================"
     )
-
     print(
         "SEMANTIC RETRIEVAL RESULTS"
     )
-
     print(
         "================================"
     )
@@ -340,7 +325,6 @@ def semantic_search(
             page
             and page not in pages
         ):
-
             pages.append(
                 page
             )
@@ -355,9 +339,7 @@ def semantic_search(
 # 10. EXACT SEARCH SCHEMA
 # =========================================================
 
-class ExactSearchQuery(
-    BaseModel
-):
+class ExactSearchQuery(BaseModel):
 
     search_text: str = Field(
         description=(
@@ -371,10 +353,8 @@ class ExactSearchQuery(
 # 11. EXACT EXTRACTION MODEL
 # =========================================================
 
-exact_model = (
-    model.with_structured_output(
-        ExactSearchQuery
-    )
+exact_model = model.with_structured_output(
+    ExactSearchQuery
 )
 
 
@@ -402,7 +382,6 @@ Show me the sentence containing "golden maknae"
 -> golden maknae
 """
     ),
-
     (
         "human",
         "{question}"
@@ -420,9 +399,7 @@ exact_chain = (
 # 13. EXTRACT EXACT SEARCH TEXT
 # =========================================================
 
-def extract_search_text(
-    question
-):
+def extract_search_text(question):
 
     result = exact_chain.invoke({
         "question": question
@@ -432,11 +409,9 @@ def extract_search_text(
         result,
         ExactSearchQuery
     ):
-
         extraction = result
 
     else:
-
         extraction = (
             ExactSearchQuery.model_validate(
                 result
@@ -458,9 +433,10 @@ def find_exact_occurrences(
 
     needle = search_text.lower()
 
-    # Important:
+    # Search original PDF pages rather than chunks.
     #
-    # Search original PDF pages, NOT overlapping chunks.
+    # This prevents overlapping chunks from creating
+    # duplicate occurrences.
 
     for document in documents:
 
@@ -484,19 +460,18 @@ def find_exact_occurrences(
             )
 
             if position == -1:
-
                 break
 
             context_start = max(
                 0,
-                position - 150
+                position - 400
             )
 
             context_end = min(
                 len(original_text),
                 position
                 + len(search_text)
-                + 150
+                + 400
             )
 
             snippet = original_text[
@@ -511,9 +486,7 @@ def find_exact_occurrences(
                         "Unknown"
                     )
                 ),
-
                 "position": position,
-
                 "snippet": snippet
             })
 
@@ -529,20 +502,14 @@ def find_exact_occurrences(
 # 15. EXACT SEARCH ROUTE
 # =========================================================
 
-def exact_search(
-    question
-):
+def exact_search(question):
 
-    search_text = (
-        extract_search_text(
-            question
-        )
+    search_text = extract_search_text(
+        question
     )
 
-    matches = (
-        find_exact_occurrences(
-            search_text
-        )
+    matches = find_exact_occurrences(
+        search_text
     )
 
     return {
@@ -553,12 +520,10 @@ def exact_search(
 
 
 # =========================================================
-# 16. AGGREGATION TYPE
+# 16. AGGREGATION CLASSIFICATION
 # =========================================================
 
-class AggregationClassification(
-    BaseModel
-):
+class AggregationClassification(BaseModel):
 
     aggregation_type: Literal[
         "exact_count",
@@ -566,8 +531,8 @@ class AggregationClassification(
     ] = Field(
         description=(
             "Whether the aggregation can be solved "
-            "using deterministic exact text counting "
-            "or requires semantic understanding."
+            "with exact text counting or requires "
+            "semantic verification."
         )
     )
 
@@ -579,10 +544,6 @@ class AggregationClassification(
         )
     )
 
-
-# =========================================================
-# 17. AGGREGATION CLASSIFIER
-# =========================================================
 
 aggregation_model = (
     model.with_structured_output(
@@ -598,60 +559,50 @@ aggregation_prompt = (
             """
 Classify an aggregation question.
 
-Choose:
+Choose exactly one:
 
-exact_count:
-Use when the question asks how many times a specific
-word, name, or exact phrase occurs in the document.
 
-Also extract the text that should be counted.
+EXACT_COUNT:
+
+Use when answering only requires counting occurrences
+of a literal word, name, or phrase.
 
 Example:
 
 "How many times is Hoseok mentioned?"
 
-aggregation_type:
-exact_count
-
-search_text:
-Hoseok
+-> exact_count
+-> search_text = "Hoseok"
 
 
-semantic:
-Use when answering requires understanding events,
-meaning, actions, relationships, descriptions, or
-concepts rather than simply counting a literal string.
+SEMANTIC:
 
-Example:
+Use when occurrences must be examined to determine whether
+they actually satisfy some condition.
+
+Examples:
+
+"How many times does Jungkook say parfait?"
+
+Counting "parfait" alone is insufficient because another
+character could say it or it could appear in narration.
+
+-> semantic
+
 
 "List every time Jungkook compliments Jimin."
 
-aggregation_type:
-semantic
+There may be no literal word "compliment".
 
-search_text:
-null
+-> semantic
 
 
 IMPORTANT:
 
-"How many times does Jungkook say parfait?"
-
-is NOT a simple exact count.
-
-Counting the word "parfait" would include occurrences
-spoken by other characters or used in narration.
-
-Determining whether Jungkook actually said it requires
-semantic understanding.
-
-Therefore:
-
-"How many times does Jungkook say parfait?"
--> semantic
+If determining WHO performed an action requires reading
+context, classify it as semantic.
 """
         ),
-
         (
             "human",
             "{question}"
@@ -667,12 +618,10 @@ aggregation_chain = (
 
 
 # =========================================================
-# 18. CLASSIFY AGGREGATION
+# 17. CLASSIFY AGGREGATION
 # =========================================================
 
-def classify_aggregation(
-    question
-):
+def classify_aggregation(question):
 
     result = aggregation_chain.invoke({
         "question": question
@@ -682,7 +631,6 @@ def classify_aggregation(
         result,
         AggregationClassification
     ):
-
         return result
 
     return (
@@ -693,7 +641,377 @@ def classify_aggregation(
 
 
 # =========================================================
-# 19. AGGREGATION SEARCH
+# 18. SEMANTIC AGGREGATION PLAN
+# =========================================================
+#
+# For our first version, we support semantic aggregation
+# questions that contain a literal candidate term.
+#
+# Example:
+#
+# "How many times does Jungkook say parfait?"
+#
+# Candidate term:
+# "parfait"
+#
+# We can find EVERY "parfait" deterministically and then
+# ask the LLM whether each occurrence satisfies the
+# semantic condition.
+#
+# =========================================================
+
+class SemanticAggregationPlan(BaseModel):
+
+    candidate_search_text: str | None = Field(
+        default=None,
+        description=(
+            "A literal word or phrase whose occurrences "
+            "can be searched exhaustively to generate "
+            "candidates. Null if no suitable literal "
+            "candidate term exists."
+        )
+    )
+
+
+semantic_plan_model = (
+    model.with_structured_output(
+        SemanticAggregationPlan
+    )
+)
+
+
+semantic_plan_prompt = (
+    ChatPromptTemplate.from_messages([
+        (
+            "system",
+            """
+You are planning candidate generation for a semantic
+aggregation question.
+
+Determine whether the user's question contains a literal
+word or phrase that can be searched across the entire
+document to generate ALL possible candidates.
+
+The candidate search text is NOT necessarily the complete
+answer condition.
+
+Example:
+
+Question:
+"How many times does Jungkook say parfait?"
+
+candidate_search_text:
+parfait
+
+Why:
+Every valid occurrence must contain the literal word
+"parfait". We can therefore search every occurrence of
+"parfait" first and later verify whether Jungkook said it.
+
+
+Question:
+"How many times does Jungkook say 'I love you'?"
+
+candidate_search_text:
+I love you
+
+
+Question:
+"List every time Jungkook compliments Jimin."
+
+candidate_search_text:
+null
+
+Why:
+A compliment can be expressed in many different ways.
+There is no single literal phrase guaranteed to appear in
+every valid event.
+
+
+Question:
+"List every time Jimin says sorry."
+
+candidate_search_text:
+sorry
+
+
+IMPORTANT:
+
+Only return candidate_search_text when EVERY valid answer
+would necessarily contain that literal text.
+
+Otherwise return null.
+"""
+        ),
+        (
+            "human",
+            "{question}"
+        )
+    ])
+)
+
+
+semantic_plan_chain = (
+    semantic_plan_prompt
+    | semantic_plan_model
+)
+
+
+# =========================================================
+# 19. CREATE SEMANTIC AGGREGATION PLAN
+# =========================================================
+
+def create_semantic_plan(
+    question
+):
+
+    result = (
+        semantic_plan_chain.invoke({
+            "question": question
+        })
+    )
+
+    if isinstance(
+        result,
+        SemanticAggregationPlan
+    ):
+        return result
+
+    return (
+        SemanticAggregationPlan.model_validate(
+            result
+        )
+    )
+
+
+# =========================================================
+# 20. VERIFICATION SCHEMA
+# =========================================================
+
+class VerificationResult(BaseModel):
+
+    matches: bool = Field(
+        description=(
+            "True only if the candidate passage "
+            "actually satisfies the user's condition."
+        )
+    )
+
+    evidence: str | None = Field(
+        default=None,
+        description=(
+            "A short explanation of the evidence "
+            "supporting the decision."
+        )
+    )
+
+
+# =========================================================
+# 21. VERIFICATION MODEL
+# =========================================================
+
+verification_model = (
+    model.with_structured_output(
+        VerificationResult
+    )
+)
+
+
+# =========================================================
+# 22. VERIFICATION PROMPT
+# =========================================================
+
+verification_prompt = (
+    ChatPromptTemplate.from_messages([
+        (
+            "system",
+            """
+You are verifying a candidate passage from a document.
+
+Determine whether the passage actually satisfies the
+user's question.
+
+Be strict.
+
+Return matches=true ONLY when the provided passage gives
+enough evidence to conclude that this occurrence satisfies
+the requested condition.
+
+Do not assume speaker identity merely because a character
+is mentioned nearby.
+
+For dialogue questions, determine who actually speaks the
+relevant words from dialogue attribution and surrounding
+context.
+
+If the passage is ambiguous, return matches=false.
+
+The candidate was found because it contains a literal
+search term. The presence of that term alone does NOT
+prove that the candidate is valid.
+"""
+        ),
+        (
+            "human",
+            """
+Question:
+
+{question}
+
+
+Candidate passage:
+
+{passage}
+"""
+        )
+    ])
+)
+
+
+verification_chain = (
+    verification_prompt
+    | verification_model
+)
+
+
+# =========================================================
+# 23. VERIFY ONE CANDIDATE
+# =========================================================
+
+def verify_candidate(
+    question,
+    candidate
+):
+
+    result = (
+        verification_chain.invoke({
+            "question": question,
+            "passage": candidate["snippet"]
+        })
+    )
+
+    if isinstance(
+        result,
+        VerificationResult
+    ):
+        return result
+
+    return (
+        VerificationResult.model_validate(
+            result
+        )
+    )
+
+
+# =========================================================
+# 24. LITERAL SEMANTIC AGGREGATION
+# =========================================================
+
+def literal_semantic_aggregation(
+    question,
+    search_text
+):
+
+    # -----------------------------------------------------
+    # A. CANDIDATE GENERATION
+    # -----------------------------------------------------
+    #
+    # This is exhaustive.
+    #
+    # If search_text = "parfait", every occurrence of
+    # "parfait" in the original document becomes a
+    # candidate.
+    # -----------------------------------------------------
+
+    candidates = find_exact_occurrences(
+        search_text
+    )
+
+    print(
+        "\n================================"
+    )
+
+    print(
+        "SEMANTIC AGGREGATION CANDIDATES"
+    )
+
+    print(
+        "================================"
+    )
+
+    print(
+        f"Candidate search text: "
+        f"{repr(search_text)}"
+    )
+
+    print(
+        f"Candidates found: "
+        f"{len(candidates)}"
+    )
+
+    # -----------------------------------------------------
+    # B. VERIFY EACH CANDIDATE
+    # -----------------------------------------------------
+
+    verified_matches = []
+
+    for index, candidate in enumerate(
+        candidates,
+        start=1
+    ):
+
+        print(
+            f"\nVerifying candidate "
+            f"{index}/{len(candidates)}..."
+        )
+
+        verification = (
+            verify_candidate(
+                question,
+                candidate
+            )
+        )
+
+        print(
+            "Page:",
+            candidate["page"]
+        )
+
+        print(
+            "Matches:",
+            verification.matches
+        )
+
+        print(
+            "Evidence:",
+            verification.evidence
+        )
+
+        if verification.matches:
+
+            verified_matches.append({
+                **candidate,
+
+                "evidence": (
+                    verification.evidence
+                )
+            })
+
+    # -----------------------------------------------------
+    # C. RETURN VERIFIED RESULTS
+    # -----------------------------------------------------
+
+    return {
+        "type": "semantic_literal",
+        "search_text": search_text,
+        "candidate_count": len(candidates),
+        "count": len(verified_matches),
+        "matches": verified_matches
+    }
+
+
+# =========================================================
+# 25. AGGREGATION SEARCH
 # =========================================================
 
 def aggregation_search(
@@ -706,9 +1024,9 @@ def aggregation_search(
         )
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # EXACT COUNT
-    # -----------------------------------------------------
+    # =====================================================
 
     if (
         classification.aggregation_type
@@ -724,8 +1042,8 @@ def aggregation_search(
             return {
                 "type": "error",
                 "message": (
-                    "The aggregation classifier did not "
-                    "provide text to count."
+                    "The aggregation classifier "
+                    "did not provide text to count."
                 )
             }
 
@@ -742,14 +1060,42 @@ def aggregation_search(
             "matches": matches
         }
 
-    # -----------------------------------------------------
+    # =====================================================
     # SEMANTIC AGGREGATION
+    # =====================================================
+
+    plan = create_semantic_plan(
+        question
+    )
+
+    candidate_search_text = (
+        plan.candidate_search_text
+    )
+
+    # -----------------------------------------------------
+    # We have a deterministic candidate generator
+    # -----------------------------------------------------
+
+    if candidate_search_text:
+
+        return (
+            literal_semantic_aggregation(
+                question,
+                candidate_search_text
+            )
+        )
+
+    # -----------------------------------------------------
+    # No exhaustive literal candidate generator exists
     # -----------------------------------------------------
 
     return {
-        "type": "semantic",
+        "type": "semantic_broad",
         "message": (
-            "Semantic aggregation route selected. "
-            "We will implement this next."
+            "This question requires broad semantic "
+            "aggregation because there is no single "
+            "literal search term guaranteed to occur "
+            "in every valid answer. We will implement "
+            "broad semantic candidate generation next."
         )
     }
