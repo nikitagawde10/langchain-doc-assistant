@@ -137,7 +137,7 @@ def reciprocal_rank_fusion(
             )
     ranked_ids = sorted(
         scores,
-        key=scores.get,
+        key=lambda document_id: scores[document_id],
         reverse=True
     )
     return [
