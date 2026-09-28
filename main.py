@@ -218,7 +218,9 @@ while True:
                 "matches"
             ]:
 
-                page = match["page"]
+                page = (
+                    match["page"]
+                )
 
                 if page not in pages:
 
@@ -232,7 +234,7 @@ while True:
             )
 
         # =================================================
-        # SEMANTIC AGGREGATION WITH LITERAL CANDIDATES
+        # LITERAL SEMANTIC AGGREGATION
         # =================================================
 
         elif (
@@ -242,7 +244,8 @@ while True:
 
             print(
                 "\nAggregation type: "
-                "SEMANTIC"
+                "SEMANTIC WITH "
+                "LITERAL CANDIDATES"
             )
 
             print(
@@ -265,10 +268,6 @@ while True:
                 "Verified matches:",
                 result["count"]
             )
-
-            # ---------------------------------------------
-            # SHOW VERIFIED RESULTS
-            # ---------------------------------------------
 
             if not result["matches"]:
 
@@ -324,8 +323,76 @@ while True:
             )
 
             print(
-                result["message"]
+                "\nRetrieval queries:"
             )
+
+            for query in result[
+                "queries"
+            ]:
+
+                print(
+                    "-",
+                    query
+                )
+
+            print(
+                "\nUnique candidates examined:",
+                result[
+                    "candidate_count"
+                ]
+            )
+
+            print(
+                "Verified chunks before "
+                "deduplication:",
+                result[
+                    "verified_before_dedup"
+                ]
+            )
+
+            print(
+                "Matches after deduplication:",
+                result["count"]
+            )
+
+            if not result["matches"]:
+
+                print(
+                    "\nNo verified matches found."
+                )
+
+            else:
+
+                for index, match in enumerate(
+                    result["matches"],
+                    start=1
+                ):
+
+                    print(
+                        f"\nMATCH {index}"
+                    )
+
+                    print(
+                        "Page:",
+                        match["page"]
+                    )
+
+                    print(
+                        "Evidence:",
+                        match["evidence"]
+                    )
+
+                    print(
+                        "\nPassage:"
+                    )
+
+                    print(
+                        match["content"]
+                    )
+
+                    print(
+                        "--------------------------------"
+                    )
 
         # =================================================
         # ERROR
