@@ -22,7 +22,7 @@ load_dotenv()
 # =========================================================
 
 loader = PyPDFLoader(
-    "documents/jikook.pdf"
+    "documents/algorithms.pdf"
 )
 
 documents = loader.load()
@@ -186,7 +186,6 @@ def reciprocal_rank_fusion(
 
     documents_by_id = {}
 
-
     # Go through each retrieval system
     for results in result_lists:
 
@@ -207,10 +206,8 @@ def reciprocal_rank_fusion(
                 document.page_content
             )
 
-
             # Store actual Document object
             documents_by_id[document_id] = document
-
 
             # Initialize score if this is the first
             # time we've encountered this chunk.
@@ -218,13 +215,11 @@ def reciprocal_rank_fusion(
             if document_id not in scores:
                 scores[document_id] = 0
 
-
             # Add RRF contribution
 
             scores[document_id] += (
                 1 / (k + rank)
             )
-
 
     # Sort IDs from highest RRF score to lowest
 
@@ -234,14 +229,12 @@ def reciprocal_rank_fusion(
         reverse=True
     )
 
-
     # Convert IDs back into Documents
 
     ranked_documents = [
         documents_by_id[document_id]
         for document_id in ranked_ids
     ]
-
 
     return ranked_documents
 
@@ -274,7 +267,6 @@ def rerank_documents(
     if not documents:
         return []
 
-
     # Create question/document pairs
 
     pairs = []
@@ -286,13 +278,11 @@ def rerank_documents(
             document.page_content
         ])
 
-
     # Ask cross-encoder for relevance scores
 
     scores = reranker.predict(
         pairs
     )
-
 
     # Combine each Document with its score:
     #
@@ -309,7 +299,6 @@ def rerank_documents(
         )
     )
 
-
     # Sort according to score.
     #
     # item looks like:
@@ -324,7 +313,6 @@ def rerank_documents(
         key=lambda item: item[1],
         reverse=True
     )
-
 
     # Keep only the best results
 
@@ -401,7 +389,6 @@ while True:
         "\nAsk a question (or type 'exit'): "
     )
 
-
     # =====================================================
     # EXIT
     # =====================================================
@@ -412,7 +399,6 @@ while True:
 
         break
 
-
     # =====================================================
     # 15. BM25 RETRIEVAL
     # =====================================================
@@ -421,11 +407,9 @@ while True:
         question
     )
 
-
     print("\n================================")
     print("BM25 RESULTS")
     print("================================")
-
 
     for index, document in enumerate(
         bm25_results
@@ -450,7 +434,6 @@ while True:
             "--------------------------------"
         )
 
-
     # =====================================================
     # 16. VECTOR RETRIEVAL
     # =====================================================
@@ -462,11 +445,9 @@ while True:
         )
     )
 
-
     print("\n================================")
     print("VECTOR SEARCH RESULTS")
     print("================================")
-
 
     for index, (
         document,
@@ -498,7 +479,6 @@ while True:
             "--------------------------------"
         )
 
-
     # =====================================================
     # 17. REMOVE VECTOR SCORES FOR RRF
     # =====================================================
@@ -526,7 +506,6 @@ while True:
         in vector_results_with_scores
     ]
 
-
     # =====================================================
     # 18. HYBRID RETRIEVAL USING RRF
     # =====================================================
@@ -537,7 +516,6 @@ while True:
             vector_results
         ]
     )
-
 
     # =====================================================
     # 19. KEEP TOP 10 RRF CANDIDATES
@@ -555,11 +533,9 @@ while True:
 
     rrf_candidates = hybrid_results[:10]
 
-
     print("\n================================")
     print("RRF CANDIDATES")
     print("================================")
-
 
     for index, document in enumerate(
         rrf_candidates
@@ -584,7 +560,6 @@ while True:
             "--------------------------------"
         )
 
-
     # =====================================================
     # 20. CROSS-ENCODER RERANKING
     # =====================================================
@@ -595,7 +570,6 @@ while True:
         top_k=5
     )
 
-
     # =====================================================
     # 21. DISPLAY RERANKED RESULTS
     # =====================================================
@@ -603,7 +577,6 @@ while True:
     print("\n================================")
     print("RERANKED RESULTS")
     print("================================")
-
 
     for index, (
         document,
@@ -635,7 +608,6 @@ while True:
             "--------------------------------"
         )
 
-
     # =====================================================
     # 22. EXTRACT FINAL DOCUMENTS
     # =====================================================
@@ -658,7 +630,6 @@ while True:
         in reranked_results
     ]
 
-
     # =====================================================
     # 23. FORMAT FINAL CONTEXT
     # =====================================================
@@ -666,7 +637,6 @@ while True:
     context = format_documents(
         retrieved_documents
     )
-
 
     # =====================================================
     # 24. SEND QUESTION + CONTEXT TO GROQ
@@ -676,7 +646,6 @@ while True:
         "context": context,
         "question": question
     })
-
 
     # =====================================================
     # 25. DISPLAY ANSWER
@@ -688,13 +657,11 @@ while True:
 
     print(answer)
 
-
     # =====================================================
     # 26. DISPLAY FINAL SOURCE PAGES
     # =====================================================
 
     pages = []
-
 
     for document in retrieved_documents:
 
@@ -704,7 +671,6 @@ while True:
 
         if page and page not in pages:
             pages.append(page)
-
 
     print(
         "\nFinal reranked pages:",

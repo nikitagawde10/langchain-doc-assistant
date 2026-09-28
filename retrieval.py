@@ -9,7 +9,7 @@ from sentence_transformers import CrossEncoder
 # 1. LOAD PDF
 # =========================================================
 loader = PyPDFLoader(
-    "documents/jikook.pdf"
+    "documents/algorithms.pdf"
 )
 documents = loader.load()
 print(
