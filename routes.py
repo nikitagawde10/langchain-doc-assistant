@@ -58,44 +58,36 @@ router_prompt = (
         (
             "system",
             """
-You classify document questions by the SEARCH STRATEGY
-needed to answer them.
-Choose exactly one category.
-SEMANTIC:
-Use when the answer can likely be found in one or a small
-number of relevant passages using meaning and context.
-Examples:
-"Who is Hoseok?"
--> semantic
-"Why is Jimin angry?"
--> semantic
-"Which ice creams do Jimin and Taehyung eat?"
--> semantic
-EXACT:
-Use when the user explicitly wants to locate a specific
-word, phrase, quotation, or exact textual occurrence.
-Examples:
-"Find the phrase 'mise en place'."
--> exact
-"Where does 'parfait' appear?"
--> exact
-AGGREGATION:
-Use when answering requires searching broadly across
-the document.
-Examples:
-"How many times is Hoseok mentioned?"
--> aggregation
-"How many times does Jungkook say parfait?"
--> aggregation
-"List every time Jungkook compliments Jimin."
--> aggregation
-Ask yourself:
-"Must I inspect broadly across the document to answer
-this completely?"
-If yes:
--> aggregation
-Otherwise, if exact matching is unnecessary:
--> semantic
+    Classify the user's question about the provided PDF by the
+    retrieval strategy needed to answer it. Choose exactly one
+    category based on the question's intent, not on any assumed
+    subject, genre, or domain of the PDF.
+
+    SEMANTIC:
+    Use when the user asks for information, explanation, or a
+    description that can likely be answered from one or a small
+    number of relevant passages by understanding their meaning.
+    This includes questions about entities, concepts, events,
+    relationships, causes, and facts, regardless of the PDF's topic.
+
+    EXACT:
+    Use when the user explicitly asks to find or locate a specific
+    literal word, phrase, quotation, or text occurrence. The main
+    task is matching the requested text, not interpreting its meaning.
+
+    AGGREGATION:
+    Use when a complete answer requires searching across the
+    document to count, total, compare frequencies, or collect every
+    or all instances that meet a condition. A request for an exact
+    text's count is aggregation, because it asks for a total; a
+    request to locate that text is exact.
+
+    Do not choose aggregation merely because the question mentions
+    multiple items or asks for more than one fact. Choose it when
+    the user asks for a total, an exhaustive list, or otherwise
+    requires broad document-wide coverage. If the question does not
+    require literal text matching or exhaustive coverage, choose
+    semantic.
 """
         ),
         (

@@ -51,74 +51,38 @@ router_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         """
-You classify document questions by the SEARCH STRATEGY needed
-to answer them.
+    Classify the user's question about a PDF by the retrieval
+    strategy needed to answer it. Choose exactly one category based
+    on the question's intent, not on any assumed subject, genre, or
+    domain of the PDF.
 
-Choose exactly one category:
+    SEMANTIC:
+    Use when the user asks for information, explanation, or a
+    description that can likely be answered from one or a small
+    number of relevant passages by understanding their meaning.
+    This includes questions about entities, concepts, events,
+    relationships, causes, and facts, regardless of the PDF's topic.
 
-SEMANTIC:
-Use when the answer can likely be found in one or a small number
-of relevant passages using meaning and context.
+    EXACT:
+    Use when the user explicitly asks to find or locate a specific
+    literal word, phrase, quotation, or text occurrence. The main
+    task is matching the requested text, not interpreting its meaning.
 
-This includes questions about:
-- people
-- relationships
-- events
-- explanations
-- descriptions
-- actions
-- facts about one or several named entities
+    AGGREGATION:
+    Use when a complete answer requires searching across the
+    document to count, total, compare frequencies, or collect every
+    or all instances that meet a condition. A request for an exact
+    text's count is aggregation, because it asks for a total; a
+    request to locate that text is exact.
 
-A question is still semantic when it asks about multiple people
-or asks for multiple facts, as long as it does NOT require
-exhaustively searching the entire document.
+    Do not choose aggregation merely because the question mentions
+    multiple items or asks for more than one fact. Choose it when
+    the user asks for a total, an exhaustive list, or otherwise
+    requires broad document-wide coverage. If the question does not
+    require literal text matching or exhaustive coverage, choose
+    semantic.
 
-Examples:
-"Who is Hoseok?" -> semantic
-"Why is Jimin angry?" -> semantic
-"What ice cream does Jimin eat?" -> semantic
-"Which ice creams do Jimin and Taehyung eat?" -> semantic
-
-
-EXACT:
-Use when the user explicitly wants to find or locate a specific
-word, phrase, quotation, or exact textual occurrence.
-
-Examples:
-"Find the phrase 'mise en place'." -> exact
-"Where does the phrase 'parfait' appear?" -> exact
-"Show me the sentence containing 'golden maknae'." -> exact
-
-
-AGGREGATION:
-Use ONLY when answering requires an EXHAUSTIVE search across
-the document.
-
-Typical aggregation questions ask for:
-- how many times something occurs
-- every occurrence
-- all instances
-- a complete list across the document
-- totals or frequencies
-
-Examples:
-"How many times does Jungkook say 'parfait'?" -> aggregation
-"List every time Jungkook compliments Jimin." -> aggregation
-"How many times is Hoseok mentioned?" -> aggregation
-
-IMPORTANT:
-Do NOT classify a question as aggregation merely because it
-mentions multiple people, objects, or facts.
-
-Ask yourself:
-
-"Do I need to search the ENTIRE document to guarantee that
-the answer is complete?"
-
-If YES -> aggregation.
-If NO and exact text matching is not required -> semantic.
-
-Return only the required structured classification.
+    Return only the required structured classification.
 """
     ),
     (
@@ -149,11 +113,14 @@ while True:
     if question.lower() == "exit":
         break
 
-
     result = router_chain.invoke({
         "question": question
     })
-
+    classification = (
+        result
+        if isinstance(result, QueryClassification)
+        else QueryClassification.model_validate(result)
+    )
 
     print("\nRESULT:")
     print(result)
@@ -162,4 +129,4 @@ while True:
     print(type(result))
 
     print("\nQUERY TYPE:")
-    print(result.query_type)
+    print(classification.query_type)
